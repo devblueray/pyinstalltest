@@ -1,0 +1,107 @@
+pipeline {
+    agent none
+    stages {
+      stage('Prepare') {
+        steps {
+          node('default') {
+          script {
+            currentBuild.description = "${BRANCH_NAME}"
+            if (BRANCH_NAME.toLowerCase().contains('release')) {
+              env.BUILD_TYPE="release"
+            } else {
+                env.BUILD_TYPE="pull-request"   
+            }
+            checkout([$class: 'GitSCM',
+            branches: [[name: "*/${BRANCH_NAME}"]],
+            userRemoteConfigs: [[
+              credentialsId: 'machine-ppjenkins',
+              url: 'https://github.com/PatientPopInc/aws'
+            ]]
+          ])
+          sh '''
+          cp /etc/build-secrets/npmrc utilities/patientpop_nodejs_utils/npmrc
+          chmod 777 utilities/patientpop_nodejs_utils/npmrc
+          '''
+        }
+        stash name: 'source', useDefaultExcludes: false, includes: '**/utilities/patientpop_nodejs_utils/package.json,**/utilities/patientpop_nodejs_utils/index.js,**/utilities/patientpop_nodejs_utils/npmrc', allowEmpty: true
+        cleanWs()
+      } 
+    }
+  }
+    stage('Deploy to staging NPM') {
+      when {
+        expression {env.BUILD_TYPE == 'pull-request'} 
+      }
+      steps {
+        node('small') {
+          script{
+            sh "chmod -R u+w .git || exit 0"
+            unstash 'source'
+            def node = tool name: 'node8.10', type: 'jenkins.plugins.nodejs.tools.NodeJSInstallation'
+            env.PATH = "${node}/bin:${env.PATH}"
+            }
+            sh '''
+            cd utilities/patientpop_nodejs_utils/
+            ls
+            cat npmrc
+            npm --userconfig npmrc whoami
+            npm --userconfig npmrc version $(cat package.json | sed -n '/"version": "*/ { s///; s/".*//; p; q; }')-prerelease
+            npm --userconfig npmrc -f publish
+            '''
+          
+        }
+      }
+    }
+    stage('Product Sign-off') {
+      when {
+        expression {env.BUILD_TYPE == 'release'}
+      }
+      steps {
+        timeout(time: 5, unit: 'DAYS') {
+          input message:'Approve deployment?(Product)', submitter: 'PatientPopInc*Leads'
+        }
+      }
+    }
+    stage('Bubble Lead Sign-off') {
+      when {
+        expression {env.BUILD_TYPE == 'release'}
+      }
+      steps {
+        timeout(time: 5, unit: 'DAYS') {
+          input message:'Approve deployment?(Bubble Lead)', submitter: 'PatientPopInc*Leads'
+        }
+      }
+    } 
+    stage('Final Sign-off') {
+      when {
+        expression {env.BUILD_TYPE == 'release'}
+      }
+      steps {
+        timeout(time: 5, unit: 'DAYS') {
+          input message:'Deploy to Production', submitter: 'PatientPopInc*Leads'
+      }
+    }
+  }
+   stage('Deploy to production NPM') {
+     when {
+       expression {env.BUILD_TYPE == 'release'}
+       }
+       steps {
+         node('small') {
+           script{
+             sh "chmod -R u+w .git || exit 0"
+             unstash 'source'
+             def node = tool name: 'node8.10', type: 'jenkins.plugins.nodejs.tools.NodeJSInstallation'
+             env.PATH = "${node}/bin:${env.PATH}"
+             sh '''
+             cd utilities/patientpop_nodejs_utils/
+             npm --userconfig npmrc whoami
+             npm --userconfig npmrc publish
+             '''
+           }
+         }
+       }
+     }
+   }
+}
+

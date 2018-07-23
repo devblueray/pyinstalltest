@@ -1,0 +1,15 @@
+{
+  "name": "patientpop_nodejs_utils",
+  "version": "1.0.0-prerelease",
+  "description": "NodeJS utilities for PP Lambda",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jason Lane <jason.lane@patientpop.com>",
+  "license": "MIT",
+  "dependencies": {
+    "aws-sdk": "^2.271.1",
+    "dict": "^1.4.0"
+  }
+}
